@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="es" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Panel de Seguridad - VayluxMC</title>
+    <!-- Incluimos Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        // Colores llamativos con temática azul
+                        primary: {
+                            '50': '#eff6ff',
+                            '100': '#dbeafe',
+                            '200': '#bfdbfe',
+                            '300': '#93c5fd',
+                            '400': '#60a5fa',
+                            '500': '#3b82f6',
+                            '600': '#2563eb',
+                            '700': '#1d4ed8',
+                            '800': '#1e40af',
+                            '900': '#1e3a8a',
+                            '950': '#172554',
+                        },
+                    },
+                },
+            }
+        }
+    </script>
+</head>
+<body class="bg-primary-950 text-gray-200 font-sans antialiased">
+
+    <!-- CONFIGURACIÓN: Edita estas dos líneas -->
+    <script>
+        const CONFIG = {
+            // Pega la URL de Google Apps Script (la misma que en config.yml)
+            SCRIPT_URL: "https://script.google.com/macros/s/AKfycbxd4e6_iHzgcxppYbG96a2WhKPVRgfUgnM-ndzsC-zpZ8weKTqh6LXRuDYCEk9Wqb4VDw/exec",
+            // Pega la Clave Secreta (la misma que en backend.gs y config.yml)
+            SECRET_KEY: "obviamentemarvineslacabra"
+        };
+    </script>
+    <!-- Fin de la Configuración -->
+
+    <div class="container mx-auto p-4 md:p-8 max-w-4xl">
+
+        <!-- Encabezado -->
+        <header class="flex justify-between items-center mb-6">
+            <h1 class="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-primary-400 to-cyan-400">
+                Panel de Seguridad de VayluxMC
+            </h1>
+            <button id="refreshButton" onclick="fetchBlockedPlayers()" class="p-2 rounded-lg bg-primary-700 hover:bg-primary-600 transition duration-150" title="Recargar lista">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+                </svg>
+            </button>
+        </header>
+
+        <!-- Contenedor Principal -->
+        <main class="bg-primary-900 shadow-xl rounded-lg overflow-hidden">
+            <div class="p-4 border-b border-primary-800">
+                <h2 class="text-xl font-semibold">Cuentas Bloqueadas</h2>
+                <p class="text-sm text-primary-300">Cuentas bloqueadas automáticamente por inicio de sesión desde una nueva IP.</p>
+            </div>
+
+            <!-- Tabla de Jugadores -->
+            <div id="loading" class="text-center p-12">
+                <p class="text-lg text-primary-300">Cargando jugadores...</p>
+            </div>
+            
+            <div id="error" classs="hidden p-6 bg-red-800 text-red-100">
+                <p class="font-bold">Error al cargar la API:</p>
+                <p id="errorMessage" class="text-sm"></p>
+            </div>
+            
+            <div id="player-list-container" class="hidden">
+                 <p id="no-players" class="text-center p-12 text-primary-400 hidden">No hay jugadores bloqueados en este momento.</p>
+                <table id="player-table" class="min-w-full divide-y divide-primary-800">
+                    <thead class="bg-primary-800">
+                        <tr>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-primary-300 uppercase tracking-wider">Jugador</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-primary-300 uppercase tracking-wider">UUID</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-primary-300 uppercase tracking-wider">Fecha de Bloqueo</th>
+                            <th scope="col" class="relative px-6 py-3">
+                                <span class="sr-only">Acciones</span>
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody id="player-list-body" class="bg-primary-900 divide-y divide-primary-800">
+                        <!-- Las filas se insertarán aquí por JS -->
+                    </tbody>
+                </table>
+            </div>
+        </main>
+
+    </div>
+
+    <!-- Modal de Confirmación (Oculto por defecto) -->
+    <div id="confirmationModal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-50 hidden">
+        <div class="bg-primary-800 rounded-lg shadow-2xl max-w-sm w-full p-6">
+            <h3 class="text-xl font-semibold mb-4">¿Estás seguro?</h3>
+            <p id="modal-text" class="text-primary-200 mb-6">¿Realmente deseas desbloquear a este jugador?</p>
+            <div class="flex justify-end gap-4">
+                <button id="modalCancel" class="px-4 py-2 rounded-lg bg-gray-600 hover:bg-gray-500 transition">Cancelar</button>
+                <button id="modalConfirm" class="px-4 py-2 rounded-lg bg-green-600 hover:bg-green-500 transition text-white">Sí, Desbloquear</button>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- Lógica del Panel -->
+    <script>
+        const loadingDiv = document.getElementById('loading');
+        const errorDiv = document.getElementById('error');
+        const errorMessage = document.getElementById('errorMessage');
+        const playerListContainer = document.getElementById('player-list-container');
+        const playerTable = document.getElementById('player-table');
+        const playerListBody = document.getElementById('player-list-body');
+        const noPlayersMessage = document.getElementById('no-players');
+        const refreshButton = document.getElementById('refreshButton');
+        
+        const modal = document.getElementById('confirmationModal');
+        const modalText = document.getElementById('modal-text');
+        const modalCancel = document.getElementById('modalCancel');
+        const modalConfirm = document.getElementById('modalConfirm');
+        
+        let currentUnblockTarget = null;
+
+        // URL base de la API
+        const API_URL = `${CONFIG.SCRIPT_URL}?secret=${CONFIG.SECRET_KEY}`;
+
+        // Cargar jugadores al iniciar
+        document.addEventListener('DOMContentLoaded', fetchBlockedPlayers);
+
+        // --- FUNCIONES ---
+
+        async function fetchBlockedPlayers() {
+            setLoading(true);
+            setError(null);
+            
+            try {
+                const response = await fetch(`${API_URL}&action=getBlockedList`);
+                if (!response.ok) {
+                    throw new Error(`La respuesta de la red no fue OK: ${response.statusText}`);
+                }
+                const result = await response.json();
+                
+                if (result.status === 'SUCCESS') {
+                    renderPlayerList(result.data);
+                } else {
+                    throw new Error(`Error de la API: ${result.message}`);
+                }
+                
+            } catch (error) {
+                setError(error.message);
+            } finally {
+                setLoading(false);
+            }
+        }
+        
+        function renderPlayerList(players) {
+            // Limpiar la lista
+            playerListBody.innerHTML = '';
+            
+            if (players.length === 0) {
+                noPlayersMessage.classList.remove('hidden');
+                playerTable.classList.add('hidden');
+            } else {
+                noPlayersMessage.classList.add('hidden');
+                playerTable.classList.remove('hidden');
+                
+                players.forEach(player => {
+                    const tr = document.createElement('tr');
+                    tr.className = "hover:bg-primary-800 transition";
+                    
+                    const date = new Date(player.date).toLocaleString('es-ES');
+                    
+                    tr.innerHTML = `
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="flex items-center">
+                                <div class="flex-shrink-0 h-10 w-10">
+                                    <img class="h-10 w-10 rounded-full" src="https://crafatar.com/avatars/${player.uuid}?size=40&overlay" alt="Avatar de ${player.username}">
+                                </div>
+                                <div class="ml-4">
+                                    <div class="text-sm font-medium text-white">${player.username}</div>
+                                </div>
+                            </div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="text-sm text-gray-300">${player.uuid}</div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="text-sm text-gray-300">${date}</div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                            <button onclick="confirmUnblock('${player.uuid}', '${player.username}')" class="text-green-400 hover:text-green-300 transition">
+                                Desbloquear
+                            </button>
+                        </td>
+                    `;
+                    playerListBody.appendChild(tr);
+                });
+            }
+        }
+        
+        function confirmUnblock(uuid, username) {
+            currentUnblockTarget = { uuid, username };
+            modalText.textContent = `¿Realmente deseas desbloquear a ${username}? Se enviará una notificación a Discord.`;
+            modal.classList.remove('hidden');
+        }
+
+        async function doUnblock() {
+            if (!currentUnblockTarget) return;
+            
+            const { uuid, username } = currentUnblockTarget;
+            modal.classList.add('hidden');
+            setLoading(true); // Usar el spinner de carga principal
+            
+            try {
+                const response = await fetch(`${API_URL}&action=unblockPlayer&uuid=${uuid}&username=${username}`);
+                const result = await response.json();
+                
+                if (result.status !== 'UNBLOCKED') {
+                   throw new Error(result.message || 'Error desconocido al desbloquear');
+                }
+                
+                // Éxito, recargar la lista
+                fetchBlockedPlayers();
+                
+            } catch (error) {
+                setError(`Error al desbloquear a ${username}: ${error.message}`);
+                setLoading(false); // Detener el spinner solo si hay error, si no, fetchBlockedPlayers() lo hará
+            }
+        }
+        
+        // --- Control de UI ---
+        
+        function setLoading(isLoading) {
+            if (isLoading) {
+                loadingDiv.classList.remove('hidden');
+                playerListContainer.classList.add('hidden');
+                refreshButton.classList.add('animate-spin');
+            } else {
+                loadingDiv.classList.add('hidden');
+                playerListContainer.classList.remove('hidden');
+                refreshButton.classList.remove('animate-spin');
+            }
+        }
+        
+        function setError(message) {
+            if (message) {
+                errorMessage.textContent = message;
+                errorDiv.classList.remove('hidden');
+            } else {
+                errorDiv.classList.add('hidden');
+            }
+        }
+        
+        // Eventos del Modal
+        modalCancel.addEventListener('click', () => {
+            modal.classList.add('hidden');
+            currentUnblockTarget = null;
+        });
+        
+        modalConfirm.addEventListener('click', doUnblock);
+
+    </script>
+</body>
+</html>
